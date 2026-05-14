@@ -1,17 +1,8 @@
 <?php
-/**
- * admin.php – панель администратора
- * Защищена HTTP Basic Auth (логин: admin, пароль: secret123)
- * Содержит защиту от CSRF, безопасную обработку ошибок,
- * экранирование вывода и хеширование пароля.
- */
-
 session_start();
 
-// --- HTTP Basic Auth с хешированным паролем ---
 $admin_login    = 'admin';
-// Хеш пароля "secret123" (сгенерирован заранее)
-$admin_hash     = '$2y$10$e0MYzXyjpJS7Pb0PvABCDEFGHIJKLMNOPQRSTUVWXYZ012345'; // замените на реальный хеш!
+$admin_hash     = '21232f297a57a5a743894a0e4a801fc3'; 
 
 if (
     empty($_SERVER['PHP_AUTH_USER']) ||
@@ -24,7 +15,6 @@ if (
     die('Доступ запрещён. Необходимо ввести логин и пароль администратора.');
 }
 
-// --- Подключение к БД ---
 $config = include 'db_config.php';
 if (!is_array($config) || !isset($config['host'], $config['dbname'], $config['user'], $config['pass'])) {
     die('Ошибка конфигурации БД.');
@@ -42,13 +32,11 @@ try {
     die('Внутренняя ошибка сервера.');
 }
 
-// --- CSRF-токен ---
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
 
-// --- Вспомогательные функции ---
 function getLanguages($db) {
     $stmt = $db->query("SELECT L_ID, LANG FROM LANGUAGE ORDER BY LANG");
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -73,7 +61,6 @@ function getStatistics($db) {
 
 $message = '';
 
-// --- Обработка удаления ---
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && !empty($_GET['id'])) {
     // Простейшая проверка CSRF через GET нежелательна, но здесь можно добавить подтверждение
     $id = (int)$_GET['id'];
@@ -91,9 +78,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete' && !empty($_GET['id']
     }
 }
 
-// --- Сохранение изменений (POST) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update') {
-    // Проверка CSRF
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         die('Недействительный CSRF-токен');
     }
@@ -143,7 +128,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// --- Получение данных ---
 $allRequests = $db->query(
     "SELECT r.R_ID, r.FIO, r.PHONE, r.E_MAIL, r.B_DATE, r.GENDER, r.BIO,
             GROUP_CONCAT(l.LANG ORDER BY l.LANG SEPARATOR ', ') AS languages
