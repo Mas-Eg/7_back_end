@@ -1,6 +1,11 @@
 <?php
 session_start();
 
+// Генерация CSRF-токена, если отсутствует
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $config = include('db_config.php');
 $db = null;
 
@@ -19,14 +24,15 @@ try {
     );
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
-    die("Ошибка подключения к БД: " . $e->getMessage());
+    error_log('DB connection error: ' . $e->getMessage());
+    die("Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.");
 }
 
-$errors = [];        
+$errors = [];
 $success = false;
-$generatedLogin = $generatedPassword = ''; 
+$generatedLogin = $generatedPassword = '';
 $isAuthenticated = isset($_SESSION['user_id']);
-$userData = null;      
+$userData = null;
 
 if ($isAuthenticated) {
     $stmt = $db->prepare("
@@ -85,7 +91,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !$isAuthenticated) {
         }
     }
 } else {
-
     $name = $tel = $email = $birth_date = $gender = $bio = '';
     $languages = [];
     $agreement = false;
@@ -99,14 +104,16 @@ if ($isAuthenticated && $userData) {
     $gender     = $userData['GENDER'];
     $bio        = $userData['BIO'];
     $languages  = $userData['languages'] ? explode(',', $userData['languages']) : [];
-    $agreement  = true; 
+    $agreement  = true;
 }
 
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Проверка CSRF-токена
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('Недействительный CSRF-токен');
+    }
 
     if (isset($_POST['action']) && $_POST['action'] === 'login') {
-
         $login = trim($_POST['login'] ?? '');
         $password = $_POST['password'] ?? '';
 
@@ -123,7 +130,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $loginError = "Неверный логин или пароль.";
         }
     } else {
-
         $name = trim($_POST['fio'] ?? '');
         $tel = trim($_POST['phone'] ?? '');
         $email = trim($_POST['email'] ?? '');
@@ -133,27 +139,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $languages = $_POST['languages'] ?? [];
         $agreement = isset($_POST['agreement']);
 
-
+        // Валидация (как и раньше)
         if (empty($name)) {
-            $errors['fio'] = "Поле ФИО обязательно для заполнения.";
+            $errors['fio'] = "Поле ФИО обязательно.";
         } elseif (strlen($name) > 150) {
             $errors['fio'] = "ФИО не должно превышать 150 символов.";
         } elseif (!preg_match('/^[a-zA-Zа-яёА-ЯЁ\s\-]+$/u', $name)) {
-            $errors['fio'] = "Допустимы только буквы (русские/латинские), пробелы и дефис.";
+            $errors['fio'] = "Допустимы только буквы, пробелы и дефис.";
         }
 
         if (empty($tel)) {
-            $errors['phone'] = "Поле Телефон обязательно для заполнения.";
+            $errors['phone'] = "Поле Телефон обязательно.";
         } elseif (!preg_match('/^\+?[0-9\-\s\(\)]+$/', $tel)) {
-            $errors['phone'] = "Допустимы цифры, знак '+', дефис, пробелы и круглые скобки.";
+            $errors['phone'] = "Допустимы цифры, '+', дефис, пробелы и скобки.";
         } elseif (strlen(preg_replace('/[^0-9]/', '', $tel)) < 6 || strlen(preg_replace('/[^0-9]/', '', $tel)) > 12) {
-            $errors['phone'] = "Номер телефона должен содержать от 6 до 12 цифр.";
+            $errors['phone'] = "Номер должен содержать от 6 до 12 цифр.";
         }
 
         if (empty($email)) {
-            $errors['email'] = "Поле Email обязательно для заполнения.";
+            $errors['email'] = "Поле Email обязательно.";
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors['email'] = "Введите корректный адрес электронной почты.";
+            $errors['email'] = "Некорректный email.";
         }
 
         if (empty($birth_date)) {
@@ -163,34 +169,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$date || $date->format('Y-m-d') !== $birth_date) {
                 $errors['birth_date'] = "Некорректный формат даты.";
             } elseif ($date > new DateTime('today')) {
-                $errors['birth_date'] = "Дата рождения не может быть в будущем.";
+                $errors['birth_date'] = "Дата не может быть в будущем.";
             }
         }
 
         if (empty($gender)) {
             $errors['gender'] = "Выберите пол.";
         } elseif (!in_array($gender, ['M', 'F'])) {
-            $errors['gender'] = "Недопустимое значение пола.";
+            $errors['gender'] = "Недопустимое значение.";
         }
 
         if (!empty($bio)) {
             if (!preg_match('/^[a-zA-Zа-яёА-ЯЁ0-9\s\.\,\!\?\;\:\-\(\)\"\'\r\n]*$/u', $bio)) {
-                $errors['bio'] = "Биография может содержать только буквы, цифры, пробелы, знаки препинания и переводы строк.";
+                $errors['bio'] = "Биография содержит недопустимые символы.";
             } elseif (strlen($bio) > 5000) {
-                $errors['bio'] = "Биография слишком длинная (максимум 5000 символов).";
+                $errors['bio'] = "Биография слишком длинная (макс. 5000).";
             }
         }
 
         if (empty($languages)) {
-            $errors['languages'] = "Выберите хотя бы один язык программирования.";
+            $errors['languages'] = "Выберите хотя бы один язык.";
         }
 
         if (!$agreement) {
-            $errors['agreement'] = "Необходимо согласиться с условиями.";
+            $errors['agreement'] = "Необходимо согласие.";
         }
 
         if (!empty($errors)) {
-
             if (!$isAuthenticated) {
                 setcookie('form_errors', json_encode($errors), 0, '/');
                 setcookie('form_values', json_encode([
@@ -206,13 +211,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: ' . $_SERVER['PHP_SELF']);
                 exit;
             }
-
         } else {
             try {
                 $db->beginTransaction();
 
                 if ($isAuthenticated) {
-
                     $requestId = $_SESSION['request_id'];
                     $stmt = $db->prepare("UPDATE REQUEST SET 
                         FIO = :name, PHONE = :tel, E_MAIL = :email, 
@@ -227,10 +230,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':bio'        => $bio,
                         ':id'         => $requestId
                     ]);
-
                     $db->prepare("DELETE FROM CONNECT WHERE R_ID = ?")->execute([$requestId]);
                 } else {
-
                     $stmt = $db->prepare("INSERT INTO REQUEST (FIO, PHONE, E_MAIL, B_DATE, GENDER, BIO) 
                                           VALUES (:name, :tel, :email, :birth_date, :gender, :bio)");
                     $stmt->execute([
@@ -244,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $requestId = $db->lastInsertId();
 
                     $login = 'user_' . uniqid();
-                    $rawPassword = bin2hex(random_bytes(4)); 
+                    $rawPassword = bin2hex(random_bytes(4));
                     $passwordHash = password_hash($rawPassword, PASSWORD_DEFAULT);
 
                     $stmt = $db->prepare("INSERT INTO users (login, password_hash, request_id) VALUES (?, ?, ?)");
@@ -269,7 +270,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->commit();
 
                 if (!$isAuthenticated) {
-
                     setcookie('form_saved_data', json_encode([
                         'fio'        => $name,
                         'phone'      => $tel,
@@ -284,11 +284,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     setcookie('generated_credentials', json_encode([
                         'login' => $generatedLogin,
                         'password' => $generatedPassword
-                    ]), time() + 60, '/'); 
+                    ]), time() + 60, '/');
 
                     setcookie('form_success', '1', 0, '/');
                 } else {
-                    $success = true; 
+                    $success = true;
                 }
 
                 if (!$isAuthenticated) {
@@ -297,7 +297,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } catch (PDOException $e) {
                 $db->rollBack();
-                $errors['db'] = "Ошибка базы данных: " . $e->getMessage();
+                error_log('Form update error: ' . $e->getMessage());
+                $errors['db'] = "Внутренняя ошибка. Попробуйте позже.";
                 if (!$isAuthenticated) {
                     setcookie('form_errors', json_encode($errors), 0, '/');
                     setcookie('form_values', json_encode([
@@ -329,7 +330,7 @@ if (isset($_COOKIE['generated_credentials'])) {
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>5_back_end</title>
+    <title>Форма регистрации</title>
     <link rel="stylesheet" href="style.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
@@ -344,7 +345,6 @@ if (isset($_COOKIE['generated_credentials'])) {
                 <a href="?logout=1" style="margin-left: 20px;">Выйти</a>
             </div>
         <?php else: ?>
-
             <div class="login-box">
                 <h3>Вход для редактирования</h3>
                 <?php if (isset($loginError)): ?>
@@ -352,6 +352,7 @@ if (isset($_COOKIE['generated_credentials'])) {
                 <?php endif; ?>
                 <form method="POST">
                     <input type="hidden" name="action" value="login">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
                     <div class="form-group">
                         <label>Логин:</label>
                         <input type="text" name="login" required>
@@ -390,6 +391,7 @@ if (isset($_COOKIE['generated_credentials'])) {
         <?php endif; ?>
 
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
 
             <div class="form-group">
                 <label for="name-input">ФИО:</label>
@@ -437,10 +439,10 @@ if (isset($_COOKIE['generated_credentials'])) {
 
             <div class="form-group">
                 <span>Пол:</span>
-                <label>
+                <label class="label">
                     <input type="radio" name="gender" value="M" <?= $gender === 'M' ? 'checked' : '' ?> /> Мужской
                 </label>
-                <label>
+                <label class="label">
                     <input type="radio" name="gender" value="F" <?= $gender === 'F' ? 'checked' : '' ?> /> Женский
                 </label>
                 <?php if (isset($errors['gender'])): ?>
@@ -456,7 +458,7 @@ if (isset($_COOKIE['generated_credentials'])) {
                     $availableLangs = ['Pascal','C','C++','JavaScript','PHP','Python','Java','Haskel','Clojure','Prolog','Scala','Go'];
                     foreach ($availableLangs as $lang) {
                         $selected = in_array($lang, $languages) ? 'selected' : '';
-                        echo "<option value=\"$lang\" $selected>$lang</option>";
+                        echo "<option value=\"" . htmlspecialchars($lang) . "\" $selected>" . htmlspecialchars($lang) . "</option>";
                     }
                     ?>
                 </select>
@@ -488,4 +490,5 @@ if (isset($_COOKIE['generated_credentials'])) {
     </div>
 </div>
 </body>
+</html>
 </html>
