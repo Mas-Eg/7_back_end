@@ -62,7 +62,6 @@ function getStatistics($db) {
 $message = '';
 
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && !empty($_GET['id'])) {
-    // Простейшая проверка CSRF через GET нежелательна, но здесь можно добавить подтверждение
     $id = (int)$_GET['id'];
     try {
         $db->beginTransaction();
