@@ -1,7 +1,6 @@
 <?php
 session_start();
 
-// Генерация CSRF-токена, если отсутствует
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -139,7 +138,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $languages = $_POST['languages'] ?? [];
         $agreement = isset($_POST['agreement']);
 
-        // Валидация (как и раньше)
         if (empty($name)) {
             $errors['fio'] = "Поле ФИО обязательно.";
         } elseif (strlen($name) > 150) {
