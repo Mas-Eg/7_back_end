@@ -1,19 +1,74 @@
 <?php
 session_start();
 
-$admin_login    = 'admin';
-$admin_hash     = '21232f297a57a5a743894a0e4a801fc3'; 
-
-if (
-    empty($_SERVER['PHP_AUTH_USER']) ||
-    empty($_SERVER['PHP_AUTH_PW'])  ||
-    $_SERVER['PHP_AUTH_USER'] !== $admin_login ||
-    !password_verify($_SERVER['PHP_AUTH_PW'], $admin_hash)
-) {
-    header('WWW-Authenticate: Basic realm="Admin Panel"');
-    header('HTTP/1.0 401 Unauthorized');
-    die('Доступ запрещён. Необходимо ввести логин и пароль администратора.');
+if (isset($_GET['logout'])) {
+    unset($_SESSION['admin_logged_in']);
+    header('Location: admin.php');
+    exit;
 }
+
+$admin_login = 'admin';
+$admin_hash = '$2y$10$RBYsOE9vDnXwzR0Ge4GI7OsPUKoUb2IWsrjkShRTTQyqyF3eWoeui';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
+    $login = trim($_POST['login'] ?? '');
+    $pass = $_POST['password'] ?? '';
+    if ($login === $admin_login && password_verify($pass, $admin_hash)) {
+        $_SESSION['admin_logged_in'] = true;
+        header('Location: admin.php');
+        exit;
+    } else {
+        $loginError = 'Неверный логин или пароль';
+    }
+}
+
+if (empty($_SESSION['admin_logged_in'])) {
+    ?>
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <title>Вход в админ-панель</title>
+        <link rel="stylesheet" href="style.css">
+        <style>
+            .login-form {
+                max-width: 400px;
+                margin: 50px auto;
+                padding: 20px;
+                border: 1px solid #ccc;
+                background: #f9f9f9;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-form">
+            <h2>Вход для администратора</h2>
+            <?php if (isset($loginError)): ?>
+                <div class="error-message"><?= htmlspecialchars($loginError) ?></div>
+            <?php endif; ?>
+            <form method="post">
+                <input type="hidden" name="action" value="login">
+                <div class="form-group">
+                    <label>Логин:</label>
+                    <input type="text" name="login" required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <input type="password" name="password" required>
+                </div>
+                <input type="submit" value="Войти" class="knopka">
+            </form>
+        </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
 
 $config = include 'db_config.php';
 if (!is_array($config) || !isset($config['host'], $config['dbname'], $config['user'], $config['pass'])) {
@@ -31,11 +86,6 @@ try {
     error_log('Admin DB error: ' . $e->getMessage());
     die('Внутренняя ошибка сервера.');
 }
-
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$csrf_token = $_SESSION['csrf_token'];
 
 function getLanguages($db) {
     $stmt = $db->query("SELECT L_ID, LANG FROM LANGUAGE ORDER BY LANG");
@@ -83,12 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     $requestId = (int)$_POST['id'];
-    $fio       = trim($_POST['fio'] ?? '');
-    $phone     = trim($_POST['phone'] ?? '');
-    $email     = trim($_POST['email'] ?? '');
+    $fio = trim($_POST['fio'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $birthDate = $_POST['birth_date'] ?? '';
-    $gender    = $_POST['gender'] ?? '';
-    $bio       = trim($_POST['bio'] ?? '');
+    $gender = $_POST['gender'] ?? '';
+    $bio = trim($_POST['bio'] ?? '');
     $languages = $_POST['languages'] ?? [];
 
     $errors = [];
@@ -162,22 +212,14 @@ $allLanguages = getLanguages($db);
 <body>
 <div class="admin-container">
     <h1>Панель администратора</h1>
-
+    <p style="text-align: right;"><a href="?logout=1">Выйти</a></p>
     <?= $message ?>
 
     <h2>Все заявки</h2>
     <table class="admin-table">
         <thead>
             <tr>
-                <th>ID</th>
-                <th>ФИО</th>
-                <th>Телефон</th>
-                <th>Email</th>
-                <th>Дата рождения</th>
-                <th>Пол</th>
-                <th>Биография</th>
-                <th>Языки</th>
-                <th>Действия</th>
+                <th>ID</th><th>ФИО</th><th>Телефон</th><th>Email</th><th>Дата рождения</th><th>Пол</th><th>Биография</th><th>Языки</th><th>Действия</th>
             </tr>
         </thead>
         <tbody>
@@ -193,8 +235,7 @@ $allLanguages = getLanguages($db);
                 <td><?= htmlspecialchars($req['languages'] ?? '—') ?></td>
                 <td>
                     <a href="?action=edit&id=<?= $req['R_ID'] ?>" class="button">✎</a>
-                    <a href="?action=delete&id=<?= $req['R_ID'] ?>" class="button danger"
-                       onclick="return confirm('Удалить запись?')">✕</a>
+                    <a href="?action=delete&id=<?= $req['R_ID'] ?>" class="button danger" onclick="return confirm('Удалить запись?')">✕</a>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -256,9 +297,7 @@ $allLanguages = getLanguages($db);
     <div class="stat-block">
         <h2>Статистика популярности языков</h2>
         <table class="admin-table">
-            <thead>
-                <tr><th>Язык</th><th>Количество пользователей</th></tr>
-            </thead>
+            <thead><tr><th>Язык</th><th>Количество пользователей</th></tr></thead>
             <tbody>
             <?php foreach ($statistics as $stat): ?>
                 <tr>
