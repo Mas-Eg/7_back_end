@@ -8,7 +8,7 @@ if (isset($_GET['logout'])) {
 }
 
 $admin_login = 'admin';
-$admin_hash = '$2y$10$RBYsOE9vDnXwzR0Ge4GI7OsPUKoUb2IWsrjkShRTTQyqyF3eWoeui';
+$admin_hash = '2yn.4fvaTgedM';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'login') {
     $login = trim($_POST['login'] ?? '');
